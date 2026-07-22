@@ -170,3 +170,27 @@ def test_tune_random_forest_returns_fitted_estimator():
     assert isinstance(best_params, dict)
     assert np.isfinite(best_rmse)
     assert np.all(predictions >= 0.0)
+
+
+from sklearn.linear_model import LinearRegression, Ridge
+
+from bike_sharing.models.train import build_stacking_regressor
+
+
+def test_build_stacking_regressor_fits_and_predicts_nonnegative():
+    X, y = _tiny_synthetic_dataset()
+    cv = TimeSeriesSplit(n_splits=2)
+
+    def preprocessor_factory():
+        return build_preprocessing_pipeline(granularity="day", cyclical_periods={"mnth": 12, "weekday": 7, "hr": 24})
+
+    tuned_models = {
+        "linear": wrap_with_log_target(preprocessor_factory(), LinearRegression()),
+        "ridge": wrap_with_log_target(preprocessor_factory(), Ridge()),
+    }
+    stacking = build_stacking_regressor(tuned_models, cv)
+    stacking.fit(X, y)
+    predictions = stacking.predict(X)
+
+    assert np.all(np.isfinite(predictions))
+    assert np.all(predictions >= 0.0)

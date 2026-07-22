@@ -1,6 +1,7 @@
 """CLI di training: split cronologico, tuning Optuna, stacking, salvataggio artefatti."""
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -182,3 +183,112 @@ def tune_random_forest(
     )
     search.fit(X, y)
     return search.best_estimator_, search.best_params_, float(-search.best_score_)
+
+
+import argparse
+import logging
+
+from sklearn.ensemble import StackingRegressor
+from sklearn.linear_model import RidgeCV
+from sklearn.model_selection import KFold
+
+from bike_sharing.config import AppConfig, Settings
+from bike_sharing.data.loader import load_dataset
+from bike_sharing.data.preprocessing import build_preprocessing_pipeline, chronological_split
+from bike_sharing.models.evaluate import compute_metrics, save_artifact, save_metrics
+
+logger = logging.getLogger(__name__)
+
+
+def build_stacking_regressor(tuned_models: dict[str, Any], cv: TimeSeriesSplit) -> StackingRegressor:
+    """Stacking: base = modelli già tunati su TimeSeriesSplit (Task 9-12, mai
+    shuffle), meta-learner = RidgeCV sulle predizioni out-of-fold.
+
+    Nota: internamente usa KFold(shuffle=False, n_splits=cv.n_splits) invece del
+    `cv` (TimeSeriesSplit) ricevuto in input. `StackingRegressor.fit` usa
+    `cross_val_predict`, che richiede che i fold di test partizionino l'intero
+    dataset senza buchi; `TimeSeriesSplit` esclude per costruzione il segmento
+    iniziale da ogni fold di test (nessun train precede il primo campione) e fa
+    fallire `cross_val_predict` con `ValueError: cross_val_predict only works
+    for partitions`. `KFold(shuffle=False)` copre l'intero dataset e mantiene
+    l'ordine originale delle righe (nessuno shuffle), ma alcuni fold di train
+    contengono righe temporalmente successive al proprio fold di test: introduce
+    un leakage limitato e circoscritto alla sola costruzione delle feature del
+    meta-learner. Non riguarda il tuning dei modelli base (Task 9-12, che restano
+    su TimeSeriesSplit) né la fase di serving finale."""
+    estimators = list(tuned_models.items())
+    stacking_cv = KFold(n_splits=cv.n_splits, shuffle=False)
+    return StackingRegressor(estimators=estimators, final_estimator=RidgeCV(), cv=stacking_cv)
+
+
+def run_training(config: AppConfig, granularity: str, use_lag_features: bool = False) -> dict[str, dict[str, float]]:
+    """Esegue l'intero training: split cronologico, tuning Optuna, stacking,
+    selezione finale, salvataggio artefatto e metriche. Ritorna le metriche di
+    tutti i modelli candidati (per il confronto nel README)."""
+    data_file = config.data.hour_file if granularity == "hour" else config.data.day_file
+    csv_path = Path(config.data.raw_dir) / data_file
+    df = load_dataset(csv_path, granularity=granularity)
+
+    train_val_df, test_df = chronological_split(df, config.split.train_val_fraction)
+    drop_cols = ["cnt", "casual", "registered", "instant", "dteday"]
+    feature_columns = [c for c in train_val_df.columns if c not in drop_cols]
+
+    X_train_val, y_train_val = train_val_df[feature_columns], train_val_df[config.target.column]
+    X_test, y_test = test_df[feature_columns], test_df[config.target.column]
+
+    cyclical_periods = config.features.cyclical.model_dump()
+
+    def preprocessor_factory():
+        return build_preprocessing_pipeline(granularity, cyclical_periods)
+
+    tscv = TimeSeriesSplit(n_splits=config.split.n_cv_splits)
+    seed = config.project.random_seed
+
+    tuned_models: dict[str, Any] = {}
+    for model_name in config.optuna.models:
+        estimator, best_params, cv_rmse = tune_boosting_model(
+            model_name, preprocessor_factory, X_train_val, y_train_val, tscv, config.optuna.n_trials, seed
+        )
+        logger.info("Optuna %s: RMSE CV=%.3f, params=%s", model_name, cv_rmse, best_params)
+        tuned_models[model_name] = estimator
+
+    rf_estimator, rf_params, rf_cv_rmse = tune_random_forest(
+        preprocessor_factory, X_train_val, y_train_val, tscv, config.random_forest.n_iter, seed
+    )
+    logger.info("RandomForest: RMSE CV=%.3f, params=%s", rf_cv_rmse, rf_params)
+    tuned_models["random_forest"] = rf_estimator
+
+    stacking = build_stacking_regressor(tuned_models, tscv)
+
+    candidates: dict[str, Any] = dict(tuned_models)
+    candidates["stacking"] = stacking
+    for name, estimator in candidates.items():
+        estimator.fit(X_train_val, y_train_val)
+
+    results = {name: compute_metrics(y_test.to_numpy(), estimator.predict(X_test)) for name, estimator in candidates.items()}
+    best_name = min(results, key=lambda name: results[name]["rmse"])
+    logger.info("Modello vincente per granularità=%s: %s (RMSE test=%.3f)", granularity, best_name, results[best_name]["rmse"])
+
+    models_dir = Path(config.serving.model_dir)
+    save_artifact(candidates[best_name], feature_columns, best_name, models_dir, granularity)
+    save_metrics(results, models_dir, granularity)
+
+    return results
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    parser = argparse.ArgumentParser(description="Training pipeline Bike Sharing ML")
+    parser.add_argument("--granularity", choices=["day", "hour"], default=None)
+    parser.add_argument("--config", type=Path, default=None)
+    args = parser.parse_args()
+
+    settings = Settings() if args.config is None else Settings(config_path=args.config)
+    config = settings.load()
+    granularity = args.granularity or config.granularity
+
+    run_training(config, granularity)
+
+
+if __name__ == "__main__":
+    main()
