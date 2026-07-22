@@ -134,3 +134,21 @@ def test_tune_boosting_model_xgboost_returns_fitted_capable_estimator():
     assert isinstance(best_params, dict)
     assert np.isfinite(best_rmse)
     assert np.all(predictions >= 0.0)
+
+
+def test_tune_boosting_model_catboost_returns_fitted_capable_estimator():
+    X, y = _tiny_synthetic_dataset()
+    cv = TimeSeriesSplit(n_splits=2)
+
+    def preprocessor_factory():
+        return build_preprocessing_pipeline(granularity="day", cyclical_periods={"mnth": 12, "weekday": 7, "hr": 24})
+
+    estimator, best_params, best_rmse = tune_boosting_model(
+        "catboost", preprocessor_factory, X, y, cv, n_trials=2, seed=42
+    )
+    estimator.fit(X, y)
+    predictions = estimator.predict(X)
+
+    assert isinstance(best_params, dict)
+    assert np.isfinite(best_rmse)
+    assert np.all(predictions >= 0.0)

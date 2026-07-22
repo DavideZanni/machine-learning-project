@@ -75,14 +75,32 @@ def _xgboost_param_space(trial: optuna.Trial) -> dict:
     }
 
 
+def _build_catboost(params: dict, seed: int) -> Any:
+    from catboost import CatBoostRegressor
+
+    return CatBoostRegressor(**params, random_seed=seed, verbose=False, allow_writing_files=False)
+
+
+def _catboost_param_space(trial: optuna.Trial) -> dict:
+    return {
+        "iterations": trial.suggest_int("iterations", 100, 800),
+        "depth": trial.suggest_int("depth", 3, 10),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+        "l2_leaf_reg": trial.suggest_float("l2_leaf_reg", 1e-2, 10.0, log=True),
+        "bagging_temperature": trial.suggest_float("bagging_temperature", 0.0, 1.0),
+    }
+
+
 PARAM_SPACES: dict[str, Callable[[optuna.Trial], dict]] = {
     "lightgbm": _lightgbm_param_space,
     "xgboost": _xgboost_param_space,
+    "catboost": _catboost_param_space,
 }
 
 BUILD_ESTIMATOR: dict[str, Callable[[dict, int], Any]] = {
     "lightgbm": _build_lightgbm,
     "xgboost": _build_xgboost,
+    "catboost": _build_catboost,
 }
 
 
