@@ -67,3 +67,36 @@ def test_load_dataset_hour_is_sorted_by_date_and_hour():
 def test_load_dataset_has_no_missing_values():
     df = load_dataset(DAY_CSV, granularity="day")
     assert df.isnull().sum().sum() == 0
+
+
+def test_load_dataset_day_sorts_shuffled_input(tmp_path):
+    # day.csv è già ordinato cronologicamente nel file grezzo: questo test mescola
+    # le righe prima di caricarle, in modo da fallire davvero se sort_values venisse
+    # rimosso per errore da loader.py (guardia contro il leakage temporale).
+    raw = pd.read_csv(DAY_CSV)
+    shuffled = raw.sample(frac=1, random_state=0)
+    shuffled_csv = tmp_path / "shuffled_day.csv"
+    shuffled.to_csv(shuffled_csv, index=False)
+
+    df = load_dataset(shuffled_csv, granularity="day")
+
+    assert df["dteday"].is_monotonic_increasing
+
+
+def test_load_dataset_hour_sorts_shuffled_input(tmp_path):
+    # Stesso principio del test precedente, ma per hour.csv: l'ordinamento combinato
+    # dteday+hr deve reggere anche partendo da un file mescolato.
+    raw = pd.read_csv(HOUR_CSV)
+    shuffled = raw.sample(frac=1, random_state=0)
+    shuffled_csv = tmp_path / "shuffled_hour.csv"
+    shuffled.to_csv(shuffled_csv, index=False)
+
+    df = load_dataset(shuffled_csv, granularity="hour")
+
+    combined = df["dteday"].astype(str) + "-" + df["hr"].astype(str).str.zfill(2)
+    assert combined.is_monotonic_increasing
+
+
+def test_load_dataset_hour_granularity_without_hr_column_raises_value_error():
+    with pytest.raises(ValueError):
+        load_dataset(DAY_CSV, granularity="hour")

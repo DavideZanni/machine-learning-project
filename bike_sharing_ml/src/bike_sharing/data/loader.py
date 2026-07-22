@@ -28,6 +28,10 @@ def load_dataset(csv_path: Path, granularity: str) -> pd.DataFrame:
 
     categorical_cols = list(CATEGORICAL_COLUMNS)
     if granularity == "hour":
+        if "hr" not in df.columns:
+            raise ValueError(
+                f"granularity='hour' richiede la colonna 'hr', assente nel file: {csv_path}"
+            )
         categorical_cols += HOURLY_ONLY_CATEGORICAL
         sort_cols = ["dteday", "hr"]
     else:
@@ -37,4 +41,4 @@ def load_dataset(csv_path: Path, granularity: str) -> pd.DataFrame:
         if col in df.columns:
             df[col] = df[col].astype("category")
 
-    return df.sort_values(sort_cols).reset_index(drop=True)
+    return df.sort_values(sort_cols, kind="stable").reset_index(drop=True)
