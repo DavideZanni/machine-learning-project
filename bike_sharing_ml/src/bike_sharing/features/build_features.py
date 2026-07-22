@@ -76,6 +76,28 @@ class LagRollingFeatures(BaseEstimator, TransformerMixin):
     """
 
     def __init__(self, lag_periods: list[int], rolling_windows: list[int]):
+        # Validazione fail-fast in __init__ (non in transform): questo transformer
+        # opera direttamente su 'cnt' ed è il punto a più alto rischio di leakage
+        # temporale del progetto. Un lag/rolling con shift < 1 vanificherebbe
+        # l'invariante dichiarato nel docstring della classe. sklearn convenzionalmente
+        # preferisce __init__ "muto" (nessuna validazione) per compatibilità con
+        # clone()/get_params(), ma clone() ricostruisce l'oggetto con gli STESSI
+        # parametri già validati alla creazione originale, quindi non c'è conflitto:
+        # una validazione qui non rompe clone/get_params, e la sicurezza (bloccare
+        # subito una configurazione pericolosa, prima ancora di un fit/transform)
+        # ha priorità sul pattern.
+        if any(lag < 1 for lag in lag_periods):
+            raise ValueError(
+                "lag_periods e rolling_windows devono contenere solo interi >= 1 "
+                f"(leakage altrimenti), ricevuto: lag_periods={lag_periods}, "
+                f"rolling_windows={rolling_windows}"
+            )
+        if any(window < 1 for window in rolling_windows):
+            raise ValueError(
+                "lag_periods e rolling_windows devono contenere solo interi >= 1 "
+                f"(leakage altrimenti), ricevuto: lag_periods={lag_periods}, "
+                f"rolling_windows={rolling_windows}"
+            )
         self.lag_periods = lag_periods
         self.rolling_windows = rolling_windows
 

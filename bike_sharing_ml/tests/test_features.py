@@ -1,6 +1,7 @@
 """Test per i transformer di feature engineering."""
 import numpy as np
 import pandas as pd
+import pytest
 
 from bike_sharing.features.build_features import CyclicalEncoder
 
@@ -64,3 +65,49 @@ def test_lag_rolling_features_never_uses_current_value():
     assert np.isclose(out["cnt_rolling_mean_2"].iloc[2], 15.0)
     # Nessun NaN residuo (fillna(0.0) applicato ai primi periodi senza storico sufficiente)
     assert out.isnull().sum().sum() == 0
+
+
+def test_lag_rolling_features_rolling_std_value_and_row_zero_fillna():
+    from bike_sharing.features.build_features import LagRollingFeatures
+
+    df = pd.DataFrame({"cnt": [10.0, 20.0, 30.0, 40.0, 50.0]})
+    transformer = LagRollingFeatures(lag_periods=[1], rolling_windows=[2])
+
+    out = transformer.fit_transform(df)
+
+    # cnt_rolling_std_2 alla riga 3 (indice 2) usa i valori shiftati delle righe 0 e 1
+    # (10.0, 20.0): deviazione standard campionaria pandas (ddof=1 di default) =
+    # sqrt(((10-15)^2 + (20-15)^2) / (2-1)) = sqrt(50)
+    assert np.isclose(out["cnt_rolling_std_2"].iloc[2], np.sqrt(50))
+    # Riga 0: nessuno storico disponibile per cnt_lag_1 -> NaN sostituito da fillna(0.0)
+    assert out["cnt_lag_1"].iloc[0] == 0.0
+
+
+def test_lag_rolling_features_multiple_lags_and_windows_preserve_column_order():
+    from bike_sharing.features.build_features import LagRollingFeatures
+
+    df = pd.DataFrame({"cnt": [10.0, 20.0, 30.0, 40.0, 50.0]})
+    transformer = LagRollingFeatures(lag_periods=[1, 2], rolling_windows=[2, 3])
+
+    out = transformer.fit_transform(df)
+
+    expected_columns = [
+        "cnt_lag_1",
+        "cnt_lag_2",
+        "cnt_rolling_mean_2",
+        "cnt_rolling_std_2",
+        "cnt_rolling_mean_3",
+        "cnt_rolling_std_3",
+    ]
+    assert list(out.columns) == expected_columns
+    assert list(transformer.get_feature_names_out()) == expected_columns
+
+
+def test_lag_rolling_features_raises_valueerror_for_periods_below_one():
+    from bike_sharing.features.build_features import LagRollingFeatures
+
+    with pytest.raises(ValueError):
+        LagRollingFeatures(lag_periods=[0], rolling_windows=[2])
+
+    with pytest.raises(ValueError):
+        LagRollingFeatures(lag_periods=[-1], rolling_windows=[2])
