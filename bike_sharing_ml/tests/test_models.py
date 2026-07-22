@@ -194,3 +194,31 @@ def test_build_stacking_regressor_fits_and_predicts_nonnegative():
 
     assert np.all(np.isfinite(predictions))
     assert np.all(predictions >= 0.0)
+
+
+from bike_sharing.models.predict import load_production_artifact, predict_from_features
+
+
+def test_predict_from_saved_artifact_is_nonnegative_and_finite(tmp_path):
+    X = pd.DataFrame({
+        "temp": [0.3, 0.5, 0.7, 0.4, 0.6, 0.2], "atemp": [0.3, 0.5, 0.6, 0.4, 0.6, 0.25],
+        "hum": [0.5, 0.4, 0.6, 0.5, 0.3, 0.7], "windspeed": [0.1, 0.2, 0.15, 0.1, 0.2, 0.3],
+        "yr": [0, 0, 1, 1, 0, 1], "holiday": [0, 0, 0, 1, 0, 0], "workingday": [1, 1, 0, 0, 1, 1],
+        "mnth": [1, 2, 3, 4, 5, 6], "weekday": [0, 1, 2, 3, 4, 5], "season": [1, 1, 2, 2, 2, 3],
+        "weathersit": [1, 2, 1, 3, 1, 2],
+    })
+    y = pd.Series([50.0, 80.0, 120.0, 30.0, 200.0, 60.0])
+    preprocessor = build_preprocessing_pipeline(granularity="day", cyclical_periods={"mnth": 12, "weekday": 7, "hr": 24})
+    model = wrap_with_log_target(preprocessor, LinearRegression())
+    model.fit(X, y)
+
+    feature_columns = list(X.columns)
+    save_artifact(model, feature_columns, "linear", tmp_path, "day")
+
+    loaded_model, metadata = load_production_artifact(tmp_path, "day")
+    sample_features = {col: X.iloc[0][col] for col in feature_columns}
+    prediction = predict_from_features(loaded_model, metadata["feature_columns"], sample_features)
+
+    assert isinstance(prediction, float)
+    assert prediction >= 0.0
+    assert np.isfinite(prediction)
