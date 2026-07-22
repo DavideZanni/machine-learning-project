@@ -56,12 +56,33 @@ def _lightgbm_param_space(trial: optuna.Trial) -> dict:
     }
 
 
+def _build_xgboost(params: dict, seed: int) -> Any:
+    from xgboost import XGBRegressor
+
+    return XGBRegressor(**params, random_state=seed, verbosity=0)
+
+
+def _xgboost_param_space(trial: optuna.Trial) -> dict:
+    return {
+        "n_estimators": trial.suggest_int("n_estimators", 100, 800),
+        "max_depth": trial.suggest_int("max_depth", 3, 12),
+        "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3, log=True),
+        "subsample": trial.suggest_float("subsample", 0.6, 1.0),
+        "colsample_bytree": trial.suggest_float("colsample_bytree", 0.6, 1.0),
+        "reg_alpha": trial.suggest_float("reg_alpha", 1e-3, 10.0, log=True),
+        "reg_lambda": trial.suggest_float("reg_lambda", 1e-3, 10.0, log=True),
+        "min_child_weight": trial.suggest_int("min_child_weight", 1, 10),
+    }
+
+
 PARAM_SPACES: dict[str, Callable[[optuna.Trial], dict]] = {
     "lightgbm": _lightgbm_param_space,
+    "xgboost": _xgboost_param_space,
 }
 
 BUILD_ESTIMATOR: dict[str, Callable[[dict, int], Any]] = {
     "lightgbm": _build_lightgbm,
+    "xgboost": _build_xgboost,
 }
 
 
