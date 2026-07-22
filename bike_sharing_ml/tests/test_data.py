@@ -100,3 +100,35 @@ def test_load_dataset_hour_sorts_shuffled_input(tmp_path):
 def test_load_dataset_hour_granularity_without_hr_column_raises_value_error():
     with pytest.raises(ValueError):
         load_dataset(DAY_CSV, granularity="hour")
+
+
+from bike_sharing.data.preprocessing import build_preprocessing_pipeline, chronological_split
+
+
+def test_chronological_split_respects_time_order():
+    df = load_dataset(DAY_CSV, granularity="day")
+
+    train_val, test = chronological_split(df, train_val_fraction=0.75)
+
+    assert len(train_val) + len(test) == len(df)
+    # Guard di regressione: nessuna data di test deve precedere l'ultima data di training
+    assert train_val["dteday"].max() < test["dteday"].min()
+
+
+def test_chronological_split_rejects_invalid_fraction():
+    df = load_dataset(DAY_CSV, granularity="day")
+    with pytest.raises(ValueError):
+        chronological_split(df, train_val_fraction=1.5)
+
+
+def test_preprocessing_pipeline_produces_no_nulls_and_drops_target_leakage_columns():
+    df = load_dataset(HOUR_CSV, granularity="hour")
+    cyclical_periods = {"mnth": 12, "weekday": 7, "hr": 24}
+
+    pipeline = build_preprocessing_pipeline(granularity="hour", cyclical_periods=cyclical_periods)
+    X = df.drop(columns=["cnt", "casual", "registered", "instant", "dteday"])
+    transformed = pipeline.fit_transform(X)
+
+    assert not pd.DataFrame(transformed).isnull().to_numpy().any()
+    feature_names = pipeline.get_feature_names_out()
+    assert not any("casual" in name or "registered" in name for name in feature_names)
