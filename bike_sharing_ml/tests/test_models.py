@@ -152,3 +152,21 @@ def test_tune_boosting_model_catboost_returns_fitted_capable_estimator():
     assert isinstance(best_params, dict)
     assert np.isfinite(best_rmse)
     assert np.all(predictions >= 0.0)
+
+
+from bike_sharing.models.train import tune_random_forest
+
+
+def test_tune_random_forest_returns_fitted_estimator():
+    X, y = _tiny_synthetic_dataset()
+    cv = TimeSeriesSplit(n_splits=2)
+
+    def preprocessor_factory():
+        return build_preprocessing_pipeline(granularity="day", cyclical_periods={"mnth": 12, "weekday": 7, "hr": 24})
+
+    estimator, best_params, best_rmse = tune_random_forest(preprocessor_factory, X, y, cv, n_iter=3, seed=42)
+    predictions = estimator.predict(X)
+
+    assert isinstance(best_params, dict)
+    assert np.isfinite(best_rmse)
+    assert np.all(predictions >= 0.0)

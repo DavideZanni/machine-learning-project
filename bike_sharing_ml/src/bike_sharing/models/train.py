@@ -144,3 +144,41 @@ def tune_boosting_model(
     best_estimator_raw = BUILD_ESTIMATOR[model_name](study.best_params, seed)
     best_ttr = wrap_with_log_target(preprocessor_factory(), best_estimator_raw)
     return best_ttr, study.best_params, study.best_value
+
+
+from scipy.stats import randint
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import RandomizedSearchCV
+
+
+def tune_random_forest(
+    preprocessor_factory: Callable[[], Any],
+    X: pd.DataFrame,
+    y: pd.Series,
+    cv: TimeSeriesSplit,
+    n_iter: int,
+    seed: int,
+) -> tuple[TransformedTargetRegressor, dict, float]:
+    """RandomizedSearchCV per RandomForest (più economico di uno study Optuna
+    dedicato: il guadagno atteso da una ricerca bayesiana su RF è minore che sui
+    modelli di boosting)."""
+    ttr = wrap_with_log_target(preprocessor_factory(), RandomForestRegressor(random_state=seed))
+
+    param_distributions = {
+        "regressor__model__n_estimators": randint(100, 600),
+        "regressor__model__max_depth": randint(3, 25),
+        "regressor__model__min_samples_split": randint(2, 20),
+        "regressor__model__min_samples_leaf": randint(1, 10),
+        "regressor__model__max_features": ["sqrt", "log2", None],
+    }
+
+    search = RandomizedSearchCV(
+        ttr,
+        param_distributions=param_distributions,
+        n_iter=n_iter,
+        cv=cv,
+        scoring="neg_root_mean_squared_error",
+        random_state=seed,
+    )
+    search.fit(X, y)
+    return search.best_estimator_, search.best_params_, float(-search.best_score_)
