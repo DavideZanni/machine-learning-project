@@ -72,3 +72,47 @@ def test_wrapped_baseline_predicts_nonnegative_and_finite_values():
 
     assert np.all(np.isfinite(predictions))
     assert np.all(predictions >= 0.0)
+
+
+from sklearn.model_selection import TimeSeriesSplit
+
+from bike_sharing.data.preprocessing import build_preprocessing_pipeline
+from bike_sharing.models.train import tune_boosting_model
+
+
+def _tiny_synthetic_dataset(n_rows: int = 60):
+    rng = np.random.default_rng(42)
+    X = pd.DataFrame({
+        "temp": rng.uniform(0, 1, n_rows),
+        "atemp": rng.uniform(0, 1, n_rows),
+        "hum": rng.uniform(0, 1, n_rows),
+        "windspeed": rng.uniform(0, 1, n_rows),
+        "yr": rng.integers(0, 2, n_rows),
+        "holiday": rng.integers(0, 2, n_rows),
+        "workingday": rng.integers(0, 2, n_rows),
+        "mnth": rng.integers(1, 13, n_rows),
+        "weekday": rng.integers(0, 7, n_rows),
+        "season": rng.integers(1, 5, n_rows),
+        "weathersit": rng.integers(1, 4, n_rows),
+    })
+    y = pd.Series(rng.uniform(10, 300, n_rows))
+    return X, y
+
+
+def test_tune_boosting_model_lightgbm_returns_fitted_capable_estimator():
+    X, y = _tiny_synthetic_dataset()
+    cv = TimeSeriesSplit(n_splits=2)
+
+    def preprocessor_factory():
+        return build_preprocessing_pipeline(granularity="day", cyclical_periods={"mnth": 12, "weekday": 7, "hr": 24})
+
+    estimator, best_params, best_rmse = tune_boosting_model(
+        "lightgbm", preprocessor_factory, X, y, cv, n_trials=2, seed=42
+    )
+    estimator.fit(X, y)
+    predictions = estimator.predict(X)
+
+    assert isinstance(best_params, dict)
+    assert np.isfinite(best_rmse)
+    assert np.all(np.isfinite(predictions))
+    assert np.all(predictions >= 0.0)
