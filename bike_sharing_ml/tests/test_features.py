@@ -44,5 +44,6 @@ def test_weather_interaction_features_computes_expected_columns():
 
     assert list(out.columns) == ["temp_atemp_diff", "discomfort_index", "workingday_x_weathersit"]
     assert np.isclose(out["temp_atemp_diff"].iloc[0], 0.1)
+    assert np.isclose(out["discomfort_index"].iloc[0], 0.64)
     assert np.isclose(out["workingday_x_weathersit"].iloc[0], 2.0)
     assert np.isclose(out["workingday_x_weathersit"].iloc[1], 0.0)
