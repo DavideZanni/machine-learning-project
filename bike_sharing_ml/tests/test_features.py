@@ -47,3 +47,20 @@ def test_weather_interaction_features_computes_expected_columns():
     assert np.isclose(out["discomfort_index"].iloc[0], 0.64)
     assert np.isclose(out["workingday_x_weathersit"].iloc[0], 2.0)
     assert np.isclose(out["workingday_x_weathersit"].iloc[1], 0.0)
+
+
+def test_lag_rolling_features_never_uses_current_value():
+    from bike_sharing.features.build_features import LagRollingFeatures
+
+    df = pd.DataFrame({"cnt": [10.0, 20.0, 30.0, 40.0, 50.0]})
+    transformer = LagRollingFeatures(lag_periods=[1], rolling_windows=[2])
+
+    out = transformer.fit_transform(df)
+
+    assert list(out.columns) == ["cnt_lag_1", "cnt_rolling_mean_2", "cnt_rolling_std_2"]
+    # Il lag_1 alla riga 2 (indice 1) deve essere il valore della riga precedente (10.0)
+    assert out["cnt_lag_1"].iloc[1] == 10.0
+    # La rolling mean a finestra 2, riga 3 (indice 2), usa solo valori shiftati (righe 0 e 1)
+    assert np.isclose(out["cnt_rolling_mean_2"].iloc[2], 15.0)
+    # Nessun NaN residuo (fillna(0.0) applicato ai primi periodi senza storico sufficiente)
+    assert out.isnull().sum().sum() == 0
