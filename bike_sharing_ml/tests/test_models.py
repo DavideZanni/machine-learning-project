@@ -157,6 +157,17 @@ def test_tune_boosting_model_catboost_returns_fitted_capable_estimator():
 from bike_sharing.models.train import tune_random_forest
 
 
+def test_tune_boosting_model_raises_value_error_for_unregistered_model_name():
+    X, y = _tiny_synthetic_dataset()
+    cv = TimeSeriesSplit(n_splits=2)
+
+    def preprocessor_factory():
+        return build_preprocessing_pipeline(granularity="day", cyclical_periods={"mnth": 12, "weekday": 7, "hr": 24})
+
+    with pytest.raises(ValueError, match="model_name non registrato"):
+        tune_boosting_model("not_a_real_model", preprocessor_factory, X, y, cv, n_trials=2, seed=42)
+
+
 def test_tune_random_forest_returns_fitted_estimator():
     X, y = _tiny_synthetic_dataset()
     cv = TimeSeriesSplit(n_splits=2)

@@ -13,7 +13,7 @@ Vedi `bike_sharing_ml/` per il pacchetto completo:
   esperimento lag/rolling (escluso dal serving).
 - `src/bike_sharing/models`: tuning Optuna (LightGBM/XGBoost/CatBoost),
   RandomForest, StackingRegressor, valutazione, predizione.
-- `apps/api.py`: FastAPI `/predict`. `apps/dashboard.py`: Streamlit (EDA + what-if).
+- `src/bike_sharing/apps/api.py`: FastAPI `/predict`. `src/bike_sharing/apps/dashboard.py`: Streamlit (EDA + what-if).
 - `Dockerfile` / `docker-compose.yml`: due servizi (api, dashboard).
 
 Il design completo è documentato in
@@ -74,7 +74,7 @@ pytest tests -v
 uvicorn bike_sharing.apps.api:app --reload
 
 # Dashboard (in un altro terminale, con l'API già in esecuzione)
-streamlit run apps/dashboard.py
+streamlit run src/bike_sharing/apps/dashboard.py
 
 # Docker (api + dashboard)
 docker compose up --build

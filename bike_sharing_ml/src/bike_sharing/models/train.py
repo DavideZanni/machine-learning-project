@@ -1,13 +1,32 @@
 """CLI di training: split cronologico, tuning Optuna, stacking, salvataggio artefatti."""
 from __future__ import annotations
 
+import argparse
+import logging
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
+import optuna
+import pandas as pd
+from scipy.stats import randint
 from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
-from sklearn.linear_model import LinearRegression, Ridge
+from sklearn.ensemble import RandomForestRegressor, StackingRegressor
+from sklearn.linear_model import LinearRegression, Ridge, RidgeCV
+from sklearn.model_selection import (
+    KFold,
+    RandomizedSearchCV,
+    TimeSeriesSplit,
+    cross_val_score,
+)
 from sklearn.pipeline import Pipeline
+
+from bike_sharing.config import AppConfig, Settings
+from bike_sharing.data.loader import load_dataset
+from bike_sharing.data.preprocessing import build_preprocessing_pipeline, chronological_split
+from bike_sharing.models.evaluate import compute_metrics, save_artifact, save_metrics
+
+logger = logging.getLogger(__name__)
 
 BASELINE_MODELS: dict[str, Any] = {
     "linear": LinearRegression(),
@@ -29,13 +48,6 @@ def wrap_with_log_target(preprocessor: ColumnTransformer, estimator: Any) -> Tra
     """
     pipeline = Pipeline([("preprocess", preprocessor), ("model", estimator)])
     return TransformedTargetRegressor(regressor=pipeline, func=np.log1p, inverse_func=np.expm1)
-
-
-from typing import Callable
-
-import optuna
-import pandas as pd
-from sklearn.model_selection import TimeSeriesSplit, cross_val_score
 
 
 def _build_lightgbm(params: dict, seed: int) -> Any:
@@ -137,6 +149,9 @@ def tune_boosting_model(
     Ritorna un TransformedTargetRegressor NON fittato con i migliori iperparametri
     trovati: va fittato sul train/val completo prima della valutazione finale.
     """
+    if model_name not in BUILD_ESTIMATOR:
+        raise ValueError(f"model_name non registrato: {model_name!r}; disponibili: {list(BUILD_ESTIMATOR)}")
+
     sampler = optuna.samplers.TPESampler(seed=seed)
     study = optuna.create_study(direction="minimize", sampler=sampler)
     objective = _make_objective(model_name, preprocessor_factory, X, y, cv, seed)
@@ -145,11 +160,6 @@ def tune_boosting_model(
     best_estimator_raw = BUILD_ESTIMATOR[model_name](study.best_params, seed)
     best_ttr = wrap_with_log_target(preprocessor_factory(), best_estimator_raw)
     return best_ttr, study.best_params, study.best_value
-
-
-from scipy.stats import randint
-from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import RandomizedSearchCV
 
 
 def tune_random_forest(
@@ -183,21 +193,6 @@ def tune_random_forest(
     )
     search.fit(X, y)
     return search.best_estimator_, search.best_params_, float(-search.best_score_)
-
-
-import argparse
-import logging
-
-from sklearn.ensemble import StackingRegressor
-from sklearn.linear_model import RidgeCV
-from sklearn.model_selection import KFold
-
-from bike_sharing.config import AppConfig, Settings
-from bike_sharing.data.loader import load_dataset
-from bike_sharing.data.preprocessing import build_preprocessing_pipeline, chronological_split
-from bike_sharing.models.evaluate import compute_metrics, save_artifact, save_metrics
-
-logger = logging.getLogger(__name__)
 
 
 def build_stacking_regressor(tuned_models: dict[str, Any], cv: TimeSeriesSplit) -> StackingRegressor:
