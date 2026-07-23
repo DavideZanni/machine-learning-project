@@ -35,7 +35,7 @@ Il design completo è documentato in
 > **Nota metodologica:** i numeri "Prima" derivano dallo script originale con il
 > suo split casuale (quindi ottimisticamente distorti dal leakage temporale); i
 > numeri "Dopo" derivano dal test set cronologico, mai visto durante training o
-> tuning. Non sono directly comparable in termini di difficoltà del task — il
+> tuning. Non sono direttamente comparabili in termini di difficoltà del task — il
 > confronto mostra comunque che la pipeline "Dopo" è più solida e non dipende da
 > un leakage per le sue prestazioni.
 
