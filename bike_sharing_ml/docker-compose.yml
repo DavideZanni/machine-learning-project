@@ -1,0 +1,23 @@
+services:
+  api:
+    build: .
+    command: ["uvicorn", "bike_sharing.apps.api:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/app/models:ro
+      - ./config:/app/config:ro
+
+  dashboard:
+    build: .
+    command: ["streamlit", "run", "src/bike_sharing/apps/dashboard.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    ports:
+      - "8501:8501"
+    environment:
+      - BIKE_API_BASE_URL=http://api:8000
+    volumes:
+      - ./models:/app/models:ro
+      - ./config:/app/config:ro
+      - ./data:/app/data:ro
+    depends_on:
+      - api
