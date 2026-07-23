@@ -1,0 +1,17 @@
+{
+  "model_name": "stacking",
+  "granularity": "day",
+  "feature_columns": [
+    "season",
+    "yr",
+    "mnth",
+    "holiday",
+    "weekday",
+    "workingday",
+    "weathersit",
+    "temp",
+    "atemp",
+    "hum",
+    "windspeed"
+  ]
+}
